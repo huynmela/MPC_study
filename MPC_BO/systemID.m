@@ -36,7 +36,7 @@ nx = 5; % number of states
 nu = 2; % number of control inputs
 data_direction = 0; % 0 for column-wise, 1 for row-wise data
 
-modelOrder = 2;
+modelOrder = nx;
 est_function = 'n4sid'; 
 
 plot_fit = 1; % 1 for yes, 0 for no; plot comparison of data/identified model
