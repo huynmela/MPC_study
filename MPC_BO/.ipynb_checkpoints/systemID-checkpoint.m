@@ -10,9 +10,6 @@ clear; close all; clc;
 % The state-space model is defined in terms of deviation variables around 
 % a nominal operating condition.
 
-% * current input follows Chan et. al. [10.23919/ACC55779.2023.10156650]   
-% * where nx = 2, nu = 2. eventually, need to modify nx = 5*?
-
 % INPUT CSV DATA REQUIREMENTS:
 % * states MUST be listed first prior to inputs
 
@@ -33,73 +30,40 @@ clear; close all; clc;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % open loop data from experimental studies
-filename = '/data/ExperimentalData/OL_data_0_inputOutputData.csv';
-filedate = '2022_09_22_17h28m06s';
-nx = 2; % number of states
-nu = 2; % number of control inputs
-data_direction = 0; % 0 for column-wise, 1 for row-wise data
+filename = '.csv';
 
-modelOrder = 2;
+y_idxs = [1,2]; % row/column indices in the data file corresponding to the output data
+u_idxs = [3,4]; % row/column indices in the data file corresponding to the input data
+y_labels = {'T (^\circC)', 'I (arb. units.)'}; % outputs
+u_labels = {'P (W)', 'q (SLM)'}; % inputs
+
+Ts = 0.5; % sampling time
+
+modelOrder = 5;
 est_function = 'n4sid'; 
 
-plot_fit = 1; % 1 for yes, 0 for no; plot comparison of data/identified model
-center_data = 1; % 1 for yes, 0 for no
-num_pts2center = 60; % number of points to use to center the data
-
-saveModel = 0; % 1 for yes, 0 for no
-out_filename = ['subspace_id_', filedate, '.mat'];
-
-% input specific to K. Chan's paper system parameters
-I_bkgd_collect = 0; % background optical intensity (if collected)
-sub_I_bkgd = 0; % option to subtract background optical intensity
-Ts = 0.5; % Sampling time
 norm_intensity = 1; % 1 for yes, 0 for no
-filter_temp = 0;
 I_norm_factor = 0.5e5; % intensity normalization factor
 T_col = 1; 
 I_col = 2;
+
+plot_fit = 1; % 1 for yes, 0 for no; plot comparison of data/identified model
+center_data = 1; % 1 for yes, 0 for no
+
+num_pts2center = 60; % number of points to use to center the data
+
+saveModel = 0; % 1 for yes, 0 for no
+out_filename = ['/data/mat/subspace_id.mat'];
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % MAIN SCRIPT:                                                            
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % LOAD, FORMAT, and CLEAN DATA %
-data = readtable(filename); % load in data
-if data_direction % transpose data if row-wise
-    data = data'; 
-end
-
-% determine indices for data file for state and input data
-numCols = width(data); % get total number of states and inputs
-% obtain state and input labels
-headers = data.Properties.VariableNames; % cell array of character vectors
-
-x_idxs = zeros(1, nx); 
-u_idxs = zeros(1, nu);
-x_labels = {};
-u_labels = {};
-
-for i = 1:numCols
-    if i < nx
-        x_idxs(n) = n; % populate state indices
-        x_labels{n} = headers{n}; % populate state labels
-    else
-        u_idxs(n) = n; % populate input indices
-        u_labels{n} = headers{n}; % populate input labels
-    end
-end
+data = readmatrix(filename); % load in data
 
 % CLEAN UP DATA HERE. Majority of this is data/system specific.
-if I_bkgd_collect
-    I_bkgd = data(1:60, I_col);
-    I_bkgd_sum = mean(I_bkgd);
-end
-
 data = data(120:end, :); % remove startup data
-
-if sub_I_bkgd
-    data(:, I_col) = data(:, I_col) - I_bkgd_sum;
-end
 
 if norm_intensity
     if isempty(I_col)
@@ -109,32 +73,16 @@ if norm_intensity
     end
 end
 
-if filter_temp
-    data(2:end,T_col) = 0.3*data(1:end-1,T_col) + 0.7*data(2:end,T_col);
-end
-
 % split data into input and output data
 udata = data(:, u_idxs);
-xdata = data(:, x_idxs);
+ydata = data(:, y_idxs);
 
-subIDdata = iddata(xdata, udata, Ts);
+subIDdata = iddata(ydata, udata, Ts);
 Ndata = subIDdata.N; % amount of data collected, based on frequency Ts
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % MODEL VERIFICATION: Plot & identify model.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-disp('Plot data to visualize.')
-figure(1)
-
-for i = 1:nx % state subplot
-    subplot(nx, nu, i)
-    plot(data(:, x_idxs(i)), 'linewidth', 2)
-    ylabel(x_labels{i})
-    set(gca, 'fontsize', 15)
-end
-xlabel('Time step')
-set(gcf, 'color', 'w');
-
 % define estimator system
 sys = n4sid(subIDdata, modelOrder, 'DisturbanceModel', 'none', 'Form', 'canonical', 'Ts', Ts); 
 % get matrices from est.
@@ -143,35 +91,66 @@ B = sys.B;
 C = sys.C;
 
 % verify model graphically
-if plot_fit
-    disp('Verifying model graphically.')
-    simTime = 0:Ts:Ts*(Ndata - 1);
-    % Plot simulated time response of dynamic system to arbitrary inputs
-    xCompare = lsim(sys, udata, simTime);
-    
-    % Create defult options for comparing Name, Value pairs
-    opt = compareOptions('InitialCondition', zeros(modelOrder,1));
-    
-    figure(3)
-    compare(subIDdata, sys, opt)
-    xlabel('Time / s')
-    legend('Experimental data', 'Linear model')
-    title('Trained Model')
-    set(gcf, 'color', 'w')
-end
+disp('Verifying model graphically.')
+simTime = 0:Ts:Ts*(Ndata - 1);
+% Plot simulated time response of dynamic system to arbitrary inputs
+yCompare = lsim(sys, udata, simTime);
+
+% Create defult options for comparing Name, Value pairs
+opt = compareOptions('InitialCondition', zeros(modelOrder,1));
+
+figure(1)
+compare(subIDdata, sys, opt)
+xlabel('Time / s')
+legend('Experimental data', 'Linear model')
+title('Trained Model')
+set(gcf, 'color', 'w')
+
 
 % validate model
-wmaxTrain = max(ydata-xCompare);
-wminTrain = min(ydata-xCompare);
-wmaxValid = zeros(1,nx);
-wminValid = zeros(1,nx);
+wmaxTrain = max(ydata-yCompare);
+wminTrain = min(ydata-yCompare);
+wmaxValid = zeros(1,ny);
+wminValid = zeros(1,ny);
 
 % determine max and min errors
-maxErr = max([wmaxTrain; wmaxValid], [], 1);
-minErr = min([wminTrain; wminValid], [], 1);
+maxErrors = max([wmaxTrain; wmaxValid], [], 1);
+minErrors = min([wminTrain; wminValid], [], 1);
 disp(['Maximum Output Errors: ', num2str(maxErrors)])
 disp(['Minimum Output Errors: ', num2str(minErrors)])
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % SAVE DATA: 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+dataInfo.ylabels = y_labels;
+dataInfo.uLabels = u_labels;
+dataInfo.fileName = filename;
+dataInfo.ydata = ydata;
+dataInfo.udata = udata;
+dataInfo.sys = sys;
+dataInfo.ypred = yCompare;
+
+% specific to K. Chan system
+dataInfo.samplingTime = Ts;
+
+if saveModel
+    if isempty(out_filename)
+        out_filename = ['empty_', filedate, '.mat'];
+    end
+
+    if isfile(out_filename)
+        overwrite_file = input('Warning: File already exists in current path! Do you want to overwrite? [1 for yes, 0 for no]: ');
+        if overwrite_file
+            save(out_filename, 'A', 'B', 'C', 'yss', 'uss', 'maxErrors', 'minErrors', 'dataInfo')
+        else
+            out_filename = input('Input a new filename (ensure .mat is included in your filename) or press Enter if you no longer want to save the identified model: \n', 's');
+            if isempty(out_filename)
+                disp('Identified system not saved.')
+            else
+                save(out_filename, 'A', 'B', 'C', 'yss', 'uss', 'maxErrors', 'minErrors', 'dataInfo')
+            end
+        end
+    else
+        save(out_filename, 'A', 'B', 'C', 'yss', 'uss', 'maxErrors', 'minErrors', 'dataInfo')
+    end
+end
