@@ -29,7 +29,9 @@ clear; close all; clc;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % open loop data from experimental studies
-filename = '/home/melhuy/Desktop/MPC_study/MPC_BO/data/OL_data_0_inputOutputData.csv';
+filepath = '\data\OL_data_0_inputOutputData.csv';
+
+filename = append(pwd, filepath);
 
 y_idxs = [1,2]; % row/column indices in the data file corresponding to the output data
 u_idxs = [3,4]; % row/column indices in the data file corresponding to the input data
@@ -46,12 +48,12 @@ I_norm_factor = 0.5e5; % intensity normalization factor
 T_col = 1; 
 I_col = 2;
 
-plot_fit = 1; % 1 for yes, 0 for no; plot comparison of data/identified model
+plot_fit = 1; % 1 for yes, 0 for no; plot comparison of data/identified model 
 center_data = 1; % 1 for yes, 0 for no
 
 num_pts2center = 60; % number of points to use to center the data
 
-saveModel = 1; % 1 for yes, 0 for no
+saveModel = 0; % 1 for yes, 0 for no
 out_filename = 'subspace_id.mat';
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -80,39 +82,49 @@ if center_data
     udata = udata - uss;
     ydata = ydata - yss;
 end
+nu = length(u_idxs);
+ny = length(y_idxs);
 
 subIDdata = iddata(ydata, udata, Ts);
 Ndata = subIDdata.N; % amount of data collected, based on frequency Ts
-
+simTime = 0:Ts:Ts*(Ndata - 1);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % MODEL VERIFICATION: Plot & identify model.
+disp('Plotting data to visualize it... See Figure 1 to verify data.')
+figure(1)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+for i = 1:ny
+    subplot(ny, nu, i)
+    plot(data(:,y_idxs(i)), 'linewidth', 2)
+    ylabel(y_labels{i})
+    set(gca, 'fontsize', 15)
+end
+xlabel('Time Step')
+set(gcf,'color','w');
+
+for i = 1:nu
+    subplot(nu, nu, i+ny)
+    stairs(data(:,u_idxs(i)), 'linewidth', 2)
+    ylabel(u_labels{i})
+    set(gca, 'fontsize', 15)
+end
+xlabel('Time Step')
+set(gcf,'color','w');
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Plot simulated time response of dynamic system to arbitrary inputs
+disp('Verifying model graphically.')
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % define estimator system
 sys = n4sid(subIDdata, modelOrder, 'Form', 'canonical', 'Ts', Ts); 
-% get matrices from est.
-A = sys.A;
-B = sys.B;
-C = sys.C;
-
-% verify model graphically
-disp('Verifying model graphically.')
-simTime = 0:Ts:Ts*(Ndata - 1);
-% Plot simulated time response of dynamic system to arbitrary inputs
+sys2 = n4sid(subIDdata, 2, 'Form', 'canonical', 'Ts', Ts);
 yCompare = lsim(sys, udata, simTime);
-
-% Create defult options for comparing Name, Value pairs
-opt = compareOptions('InitialCondition', zeros(modelOrder,1));
-
-figure(1)
-ny = length(y_idxs);
-nu = length(u_idxs);
-
-compare(subIDdata, sys, opt)
+figure(2)
+compare(subIDdata, sys, sys2 )
 xlabel('Time / s')
-legend('Experimental data', 'Linear model')
+legend('Experimental data', 'D=5', 'D=2')
 set(gcf, 'color', 'w')
 
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % validate model
 wmaxTrain = max(ydata-yCompare);
 wminTrain = min(ydata-yCompare);
